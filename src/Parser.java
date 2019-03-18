@@ -1,6 +1,8 @@
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Parser {
     
@@ -21,26 +23,54 @@ public class Parser {
                 System.exit(1);
             }
 
+            int[] arg = new int[3]; // array containing width | height | type
+            List<char[]> data = new ArrayList<>();
             int testEof = file.read();
             boolean eof = (testEof == -1);
-            int[] arg = new int[3]; // TODO : gérer si le fichier ne commence pas par un block H
-            while (!eof) { // tester si le fichier ne contiennent pas de H
+            boolean headerPresent = false;
+
+            while (!eof) {
                 char type = (char) testEof;
 
-                if (type == 'H') { // reading H block
+                if (type == 'H') {
                     arg = Parser.readHBlock(file);
+                    headerPresent = true;
                 }
                 
-                if (type == 'C') {
+                else if (type == 'C') {
                     Parser.readCBlock(file);
                 }
 
-                if (type == 'D') {
-                    Parser.printData(Parser.readDBlock(file), arg[0], arg[1], arg[2]); // TODO : concatener les resultats et print après le while
+                else if (type == 'D') {
+                    data.add(Parser.readDBlock(file));
+                }
+                else {
+                    System.err.println("Invalid block structure");
+                    System.exit(1);
                 }
 
                 testEof = file.read();
                 if (testEof == -1) { eof = true; }
+            }
+
+            if (!headerPresent) {
+                System.err.println("missing header");
+                System.exit(1);
+            }
+
+            int effectiveSize = 0;
+            for(char[] element : data) {
+                effectiveSize += element.length;
+            }
+            System.out.println(effectiveSize);
+
+            if (effectiveSize != (arg[0]*arg[1])) {
+                System.err.println("Invalid Mini-PNG : size of the datas does not match with the size announced in the header");
+                System.exit(1);
+            }
+
+            for (char[] element : data) {
+                Parser.printData(element, arg[0], arg[1], arg[2]);
             }
             System.out.println("end of file");
 
@@ -79,11 +109,12 @@ public class Parser {
         return magicNumber;
     }
 
+    // return an array containing width | height | type
     public static int[] readHBlock(FileInputStream file) {
-        int[] result = new int[3]; // array containing width | hight | type
+        int[] result = new int[3];
         try {
-            
-            int size = Parser.getSize(file);
+
+            int size = Parser.getSize(file); // 1 byte need to be consumed
 
             byte[] buffer = new byte[4];
 
@@ -121,14 +152,9 @@ public class Parser {
 
     public static char[] readDBlock(FileInputStream file) {
 
-        // TODO : vérifier qu'il y a bien autant de pixels que largeur x hauteur
         int size = Parser.getSize(file);
-        System.out.println("readDblock::size :" + size);
-        /* if((hauteur * largeur - size*8) != 0) {
-            System.err.println("Invalid format : wrong dimensions");
-            System.exit(1);
-        } */
-        char[][] bitLine = new char[size][8]; // TODO : gerer les tailles differentes de 8
+
+        char[][] bitLine = new char[size][8];
 
         try {
             for (int i = 0; i < size; i++) {
@@ -151,7 +177,7 @@ public class Parser {
     }
 
     public static void printData(char[] dataArray, int largeur, int hauteur, int type) {
-        for(int i = 0; i < hauteur; i++) {
+        for(int i = 0; i < (dataArray.length/largeur); i++) {
             String line = "";
 
             for(int j = 0; j < largeur; j++) {
@@ -168,14 +194,20 @@ public class Parser {
         }
     }
 
+    // get the 4 bytes corresponding to the size in a bloc
     public static int getSize(FileInputStream file) {
-        byte[] buffer = new byte[4]; // reading size
+        byte[] buffer = new byte[4];
         try {
             file.read(buffer);
         } catch (IOException e) {
             e.printStackTrace();
         }
-        return ByteBuffer.wrap(buffer).getInt();
+        int size = ByteBuffer.wrap(buffer).getInt();
+        if(size < 1) {
+            System.err.println("invalid block size");
+            System.exit(1);
+        }
+        return size;
     }
 
     public static char[] flattenArray(char[][] arrayToFlatten) {
